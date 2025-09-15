@@ -1,0 +1,88 @@
+name: test-run
+target: modules.train_sdxl.setup
+
+trainer:
+  model_path: /mnt/raid0/linux-train/image-train/Stable-diffusion/sd_xl_base_1.0.safetensors
+  batch_size: 4  # 建议: 对于24GPU集群，每GPU批次太小，考虑增加到8-12
+  seed: 1138
+  wandb_id: ""
+  use_xformers: false  # 性能提示: 建议开启xformers以提升训练效率
+  accumulate_grad_batches: 1  # 多节点建议: 增加到2-4以获得更大的有效批次大小
+  gradient_clip_val: 0.0
+
+  save_format: safetensors
+  checkpoint_dir: checkpoint
+  checkpoint_freq: 1  # 存储优化: 考虑改为5-10以减少I/O开销
+  checkpoint_steps: -1
+  save_weights_only: true
+  max_epochs: 60
+  max_steps: -1
+
+advanced:
+  vae_encode_batch_size: -1 # same as batch_size
+  train_text_encoder_1: false
+  train_text_encoder_2: false
+  text_encoder_1_lr: 3e-6
+  text_encoder_2_lr: 3e-6
+  offset_noise: true
+  offset_noise_val: 0.0375
+  min_snr: true
+  min_snr_val: 5
+  timestep_start: 0
+  timestep_end: 1000
+  v_parameterization: false
+  zero_terminal_snr: false
+  do_edm_style_training: false
+  
+lightning:
+  accelerator: gpu
+  devices: 8          # 每个节点的GPU数量 - 请询问可心确认硬件配置
+  num_nodes: 3        # 节点数量 - 需要与可心确认集群规模和网络配置
+  precision: bf16-mixed
+  strategy: deepspeed # 或 fsdp、ddp - 多节点策略，请与可心讨论最适合的分布式方案
+  strategy_params:    # 可选的策略参数 - DeepSpeed具体配置需要可心协助调优
+    stage: 2          # 阶段2适合中等规模，大规模可考虑stage 3
+
+dataset:
+  name: data.bucket.AspectRatioDataset 
+  target_area: 1_048_576 # 1024*1024
+  min_size: 512
+  max_size: 2048
+  img_path: "/mnt/raid0/linux-train/image-train/train/UI_Icon"
+  # process_batch_fn: "data.processors.shuffle_prompts_sdstyle"
+  max_token_length: 225 # [75, 150, 225]
+
+optimizer:
+  name: bitsandbytes.optim.AdamW8bit
+  params:
+    lr: 5e-6  # 学习率建议: 多节点训练可能需要线性缩放，考虑1e-5或更高
+    weight_decay: 1e-2
+
+scheduler:
+  name: transformers.get_constant_schedule_with_warmup
+  params:
+    num_warmup_steps: 0  # 预热建议: 大批次训练建议增加预热步数，如100-500
+    last_epoch: -1
+
+sampling:
+  enabled: false  # 调试建议: 可开启以监控训练进展
+  use_wandb: true
+  seed: 1234
+  height: 1280
+  width: 768
+  every_n_steps: -1
+  every_n_epochs: 1
+  save_dir: "samples"
+  prompts: 
+    - "best quality, a girl with a yellow hat and a yellow shirt, sitting, white legwear, uniform, jacket, thighhighs, bare shoulders, high contrast, paint splatter"
+    - "best quality, 1girl, solo, loli, cat girl, silver hair ,blue eyes, flat chest, solo, beautiful detailed background, messy hair, long hair"
+    - "masterpiece, best quality, 1girl, solo,loli,wedding dress|see-through highleg leotard, veil, elbow gloves, white thighhighs, crown, earrings, bow on waist, sideboob, lace,"
+    - "1girl, solo, shirt, thighhighs, skirt, hands on hips, white shirt, crystal, flandre scarlet, blonde hair, grey skirt, red bow, red eyes, black thighhighs, wings, white background,"
+    - "1girl,sitting,fantasy,masterpiece,best quality,(long blonde hair),(blue eyes),(floating hair),(black ribbed sweater:1.1),(red plaid skirt:1.1),(cat ears)"
+
+# 多节点训练补充说明:
+# 1. 确保所有节点间网络互通，延迟低于1ms
+# 2. 需要配置共享存储或确保模型和数据在各节点可访问
+# 3. 建议先进行单节点测试验证配置正确性
+# 4. 监控各节点GPU利用率和内存使用情况
+# 请与可心确认: 集群网络配置、存储架构、和分布式训练经验
