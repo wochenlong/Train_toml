@@ -1,0 +1,94 @@
+name: test-run  # 训练任务名称
+target: modules.train_sdxl_hezi.setup  # 目标训练模块
+
+trainer:
+  model_path: /app/naifu555/checkpoint/checkpoint-e0_s7000.safetensors  # 基础模型路径
+  batch_size: 4  # 每GPU批次大小，8GPU总批次=32
+  resolution: 1024  # 训练分辨率，SDXL标准1024
+  world_size: 8  # 总GPU数量
+  seed: 1138  # 随机种子，确保可重现性
+  wandb_id: ""  # W&B实验ID，留空则创建新实验
+  use_xformers: true  # 使用xformers优化，提升内存效率和速度
+  accumulate_grad_batches: 4  # 梯度累积，有效批次=4*4*8=128
+  gradient_clip_val: 0.0  # 梯度裁剪值，0表示不裁剪
+
+  save_format: safetensors  # 保存格式，推荐safetensors
+  checkpoint_dir: "/data/sdxl/naifu7/checkpoint"  # 检查点保存目录
+  checkpoint_freq: 1  # 每1个epoch保存一次检查点
+  checkpoint_steps: -1  # 按步数保存，-1表示禁用
+  save_weights_only: true  # 仅保存权重，节省空间
+  max_epochs: 60  # 最大训练轮数
+  max_steps: -1  # 最大训练步数，-1表示使用epoch控制
+
+advanced:  # 高级训练参数
+  vae_encode_batch_size: -1 # VAE编码批次大小，-1表示与batch_size相同
+  train_text_encoder_1: false  # 是否训练第一个文本编码器
+  train_text_encoder_2: false  # 是否训练第二个文本编码器
+  text_encoder_1_lr: 3e-6  # 第一个文本编码器学习率
+  text_encoder_2_lr: 3e-6  # 第二个文本编码器学习率
+  offset_noise: true  # 启用偏移噪声，提升生成质量
+  offset_noise_val: 0.0375  # 偏移噪声强度
+  min_snr: true  # 启用最小信噪比，稳定训练
+  min_snr_val: 5  # 最小信噪比值
+  timestep_start: 0  # 时间步起始值
+  timestep_end: 1000  # 时间步结束值
+  v_parameterization: false  # v参数化，SDXL通常不启用
+  zero_terminal_snr: false  # 零终端信噪比
+  do_edm_style_training: false  # EDM风格训练
+  
+lightning:  # PyTorch Lightning配置
+  accelerator: gpu  # 使用GPU加速
+  devices: 8  # 单节点8GPU配置
+  precision: 16-mixed  # 混合精度训练，节省显存
+
+dataset:  # 数据集配置
+  name: data_loader.arrow_load_stream.TextImageArrowStream  # 数据加载器类型
+  target_area: 1_048_576  # 目标像素面积 (1024*1024)
+  index_file: "dataset/porcelain/jsons/porcelain_mt.json"  # 数据索引文件
+  multireso: true  # 启用多分辨率训练
+  num_workers: 2  # 数据加载并行工作进程数
+  min_size: 512  # 最小图像尺寸
+  max_size: 2048  # 最大图像尺寸
+  img_path: "/root/niji-anime-1"  # 图像数据路径
+  random_flip: false  # 随机水平翻转，关闭以保持角色一致性
+  # process_batch_fn: "data.processors.shuffle_prompts_sdstyle"  # 批次处理函数，已注释
+  max_token_length: 225  # 最大token长度 [75, 150, 225可选]
+
+optimizer:  # 优化器配置
+  name: bitsandbytes.optim.AdamW  # 使用bitsandbytes优化的AdamW
+  params:
+    lr: 6e-6  # 学习率，相比多节点配置稍高
+    weight_decay: 1e-2  # 权重衰减，防止过拟合
+
+scheduler:  # 学习率调度器
+  name: transformers.get_constant_schedule_with_warmup  # 恒定学习率+预热
+  params:
+    num_warmup_steps: 0  # 预热步数，0表示无预热
+    last_epoch: -1  # 上次epoch，-1表示从头开始
+
+sampling:  # 采样生成配置
+  enabled: true  # 启用训练中采样，用于监控效果
+  use_wandb: true  # 采样结果上传到W&B
+  seed: 1234  # 采样随机种子
+  height: 1280  # 采样图像高度
+  width: 768  # 采样图像宽度
+  every_n_steps: 1000  # 每1000步采样一次
+  every_n_epochs: 1  # 每1个epoch采样一次
+  save_dir: "/data/sdxl/naifu7/samples"  # 采样图像保存目录
+  prompts:   # 采样提示词列表
+    - "1girl ,solo, best quality"  # 基础单人女性
+    - "1boy, solo, shirt, thighhighs, skirt, hands on hips"  # 基础单人男性
+    - "1girl,  arknights, amiya , by miv4t style,by rella style, animal ears, blue eyes, blue neckwear, brown hair, gradient background, grey background, hair between eyes, jewelry, long hair,  multiple rings, neck ring, parted lips, rabbit ears, reaching, reaching towards viewer, ring, solo, thumb ring, upper body, white background, absurdres, highres, chromatic aberration, blurry background, newest, sensitive,best quality,masterpieces"  # 明日方舟阿米娅特定风格
+    - "best quality, a girl with a yellow hat and a yellow shirt, sitting, white legwear, uniform, jacket, thighhighs, bare shoulders, high contrast, paint splatter"  # 制服少女
+    - "best quality, 1girl, solo, upside down"  # 倒立姿势
+    - "1girl, original, fkey, ke-ta, ciloranko, wash painting, monochrome, sketch, armor, armpits, detached sleeves, gloves, hair tie, long sleeves, red gloves, rope, shoulder armor, sideboob, tabard, arm up, upper body, grey hair, grey background, green eyes, outstretched arm, blush, helmet, one side up, tassel, simple background, partially colored, single hair bun, short hair, breasts, solo, :o, open mouth, looking away, pauldrons, armpit peek, elbow gloves, faulds, hair bun, greaves, looking to the side,masterpiece, best quality, newest, absurdres, highres, sensitive"  # 装甲少女复杂构图
+    - "1girl, solo, shirt, thighhighs, skirt, hands on hips, white shirt, crystal, flandre scarlet, blonde hair, grey skirt, red bow, red eyes, black thighhighs, wings, white background,"  # 东方芙兰朵露
+    - "1girl,gwen (league of legends),rella,chain, cross, falling petals, flower, gold, lock, padlock, petals, restraints, collarbone, breasts, lens flare, artist name, chest jewel, sparkle background, dress, ahoge, short sleeves, drill hair, blue hair, strapless, strapless dress, detached sleeves, from above, long hair, outdoors, rose petals, closed mouth, floating, cleavage, aqua hair, muted color, closed eyes,masterpiece, best quality, newest, absurdres, highres, sensitive"  # 英雄联盟格温
+
+# 配置特点总结:
+# - 单节点8GPU配置，相比多节点配置更简洁
+# - 使用Arrow数据流，支持大规模数据集高效加载
+# - 启用采样监控，便于观察训练效果
+# - 梯度累积=4，有效批次大小=128，适合SDXL训练
+# - 学习率6e-6，比多节点配置略高但仍在合理范围
+
