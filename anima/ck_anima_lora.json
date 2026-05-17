@@ -1,0 +1,1 @@
+[{"time":"2026/5/17 23:08:07","value":{"train_data_dir":"D:\\ai\\lora-scripts-next\\data\\xinhaicheng","output_name":"xin","output_dir":"./output/xin","save_every_n_epochs":1,"max_train_epochs":20,"enable_preview":true},"name":"xin"}]
